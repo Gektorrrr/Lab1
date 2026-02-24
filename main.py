@@ -1,5 +1,66 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+# 1. Зчитування RGB зображення
+image_path = "edited-image.jpg"
+
+bgr = cv2.imread(image_path)
+if bgr is None:
+    raise FileNotFoundError(
+        f"Не можу знайти/прочитати зображення: {image_path}. "
+        f"Перевір шлях і назву файлу."
+    )
+
+rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+# 2. Перетворення в градації сірого
+gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+
+# 3. Сегментація (k-means)
+Z = gray.reshape((-1, 1))
+Z = np.float32(Z)
+
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
+k = 3
+ret, labels, centers = cv2.kmeans(Z, k, None, criteria, 10, cv2.KMEANS_PP_CENTERS)
+
+labels = labels.reshape(gray.shape)
+
+# Візуалізація сегментації
+segmented = (labels * (255 // (k - 1))).astype(np.uint8)
+
+# Відображення
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.title("RGB")
+plt.imshow(rgb)
+plt.axis("off")
+
+plt.subplot(1, 3, 2)
+plt.title("Grayscale")
+plt.imshow(gray, cmap="gray")
+plt.axis("off")
+
+plt.subplot(1, 3, 3)
+plt.title("Segmentation")
+plt.imshow(segmented, cmap="gray")
+plt.axis("off")
+
+plt.show()
+
+# Гістограми для кожного сегмента
+plt.figure(figsize=(8, 6))
+
+for i in range(k):
+    pixels = gray[labels == i]
+    plt.hist(pixels, bins=256, alpha=0.5, label=f"Segment {i}")
+
+plt.title("Histograms of Segments")
+plt.legend()
+plt.show()
 
 
 # 4. Функція розрахування ентропії Шенона
