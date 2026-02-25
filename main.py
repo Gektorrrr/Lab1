@@ -118,3 +118,110 @@ entropy_m = calculate_markov_entropy(img)
 print(f"Ентропія Шенона: {entropy_s:.4f} біт")
 print(f"Міра Хартлі: {measure_h:.4f} біт")
 print(f"Марковська ентропія (1-го порядку): {entropy_m:.4f} біт")
+
+# 7. Застосувати функції 4–6 до зображення в градаціях сірого (gray)
+entropy_s_gray = calculate_shannon_entropy(gray)
+measure_h_gray = calculate_hartley_measure(gray)
+entropy_m_gray = calculate_markov_entropy(gray)
+
+print("\n=== Пункт 7: Результати для grayscale (gray) ===")
+print(f"Ентропія Шенона (gray): {entropy_s_gray:.4f} біт")
+print(f"Міра Хартлі (gray): {measure_h_gray:.4f} біт")
+print(f"Марковська ентропія 1-го порядку (gray): {entropy_m_gray:.4f} біт")
+
+
+# 8. Застосувати функції 4–6 до сегментів
+print("\n=== Пункт 8: Результати для кожного сегмента ===")
+
+segment_results = []  # (segment_id, n_pixels, shannon, hartley, markov)
+
+for seg_id in range(k):
+    mask = (labels == seg_id)
+
+    # Робимо 2D-зображення сегмента: пікселі сегмента залишаємо, решту зануляємо
+    # (так markov_entropy працює коректно з 2D, бо в ньому використовуються сусідні пікселі)
+    seg_img = np.zeros_like(gray)
+    seg_img[mask] = gray[mask]
+
+    n_pixels = int(mask.sum())
+
+    sh = calculate_shannon_entropy(seg_img)
+    ha = calculate_hartley_measure(seg_img)
+    ma = calculate_markov_entropy(seg_img)
+
+    segment_results.append((seg_id, n_pixels, sh, ha, ma))
+
+    print(f"Сегмент {seg_id}: pixels={n_pixels}, "
+          f"Shannon={sh:.4f}, Hartley={ha:.4f}, Markov={ma:.4f}")
+
+# Усереднення результатів по сегментах:
+#
+# 1) просте середнє (кожен сегмент має однакову вагу)
+avg_sh = np.mean([r[2] for r in segment_results])
+avg_ha = np.mean([r[3] for r in segment_results])
+avg_ma = np.mean([r[4] for r in segment_results])
+
+# 2) зважене середнє (вага = кількість пікселів у сегменті)
+total_pixels = sum(r[1] for r in segment_results)
+wavg_sh = sum(r[2] * r[1] for r in segment_results) / total_pixels
+wavg_ha = sum(r[3] * r[1] for r in segment_results) / total_pixels
+wavg_ma = sum(r[4] * r[1] for r in segment_results) / total_pixels
+
+print("\n--- Усереднені значення по сегментах ---")
+print(f"Середнє (просте): Shannon={avg_sh:.4f}, Hartley={avg_ha:.4f}, Markov={avg_ma:.4f}")
+print(f"Середнє (зважене): Shannon={wavg_sh:.4f}, Hartley={wavg_ha:.4f}, Markov={wavg_ma:.4f}")
+
+
+# Візуалізація результатів пунктів 7 і 8
+#
+# 1) Порівняння: grayscale vs average сегментів (просте і зважене)
+labels_x = ["Shannon", "Hartley", "Markov"]
+vals_gray = [entropy_s_gray, measure_h_gray, entropy_m_gray]
+vals_avg = [avg_sh, avg_ha, avg_ma]
+vals_wavg = [wavg_sh, wavg_ha, wavg_ma]
+
+x = np.arange(len(labels_x))
+width = 0.25
+
+plt.figure(figsize=(10, 5))
+plt.bar(x - width, vals_gray, width, label="Gray (п.7)")
+plt.bar(x, vals_avg, width, label="Avg сегментів (просте)")
+plt.bar(x + width, vals_wavg, width, label="Avg сегментів (зважене)")
+plt.xticks(x, labels_x)
+plt.title("Порівняння результатів: grayscale vs сегменти")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 2) Окремо: значення по сегментах
+seg_ids = [r[0] for r in segment_results]
+sh_vals = [r[2] for r in segment_results]
+ha_vals = [r[3] for r in segment_results]
+ma_vals = [r[4] for r in segment_results]
+
+plt.figure(figsize=(10, 4))
+plt.bar(seg_ids, sh_vals)
+plt.title("Ентропія Шенона по сегментах")
+plt.xlabel("Segment id")
+plt.ylabel("bits")
+plt.xticks(seg_ids)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(10, 4))
+plt.bar(seg_ids, ha_vals)
+plt.title("Міра Хартлі по сегментах")
+plt.xlabel("Segment id")
+plt.ylabel("bits")
+plt.xticks(seg_ids)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(10, 4))
+plt.bar(seg_ids, ma_vals)
+plt.title("Марковська ентропія 1-го порядку по сегментах")
+plt.xlabel("Segment id")
+plt.ylabel("bits")
+plt.xticks(seg_ids)
+plt.tight_layout()
+plt.show()
