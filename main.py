@@ -2,66 +2,163 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
+# =============================
+# 1) READ RGB IMAGE
+# =============================
+IMAGE_PATH = "edited-image.jpg"
 
-# 1. Зчитування RGB зображення
-image_path = "edited-image.jpg"
+img_bgr = cv2.imread(IMAGE_PATH)
+if img_bgr is None:
+    raise FileNotFoundError("Не знайдено зображення")
 
-bgr = cv2.imread(image_path)
-if bgr is None:
-    raise FileNotFoundError(
-        f"Не можу знайти/прочитати зображення: {image_path}. "
-        f"Перевір шлях і назву файлу."
-    )
+img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+# =============================
+# 2) RGB -> GRAY
+# =============================
+r = img_rgb[:, :, 0].astype(np.float32)
+g = img_rgb[:, :, 1].astype(np.float32)
+b = img_rgb[:, :, 2].astype(np.float32)
 
-# 2. Перетворення в градації сірого
-gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+img_gray = 0.299 * r + 0.587 * g + 0.114 * b
+img_gray = np.round(img_gray).clip(0, 255).astype(np.uint8)
 
-# 3. Сегментація (k-means)
-Z = gray.reshape((-1, 1))
-Z = np.float32(Z)
+# =============================
+# ФУНКЦІЇ ДЛЯ ПОБУДОВИ ГРАФІКІВ
+# =============================
+def segment_into_blocks(gray, block):
+    H, W = gray.shape
+    H2 = (H // block) * block
+    W2 = (W // block) * block
+    cropped = gray[:H2, :W2]
+    blocks = cropped.reshape(H2 // block, block, W2 // block, block).swapaxes(1, 2)
+    return blocks, cropped
 
-criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
-k = 3
-ret, labels, centers = cv2.kmeans(Z, k, None, criteria, 10, cv2.KMEANS_PP_CENTERS)
+def compute_features_no_entropy(blocks):
+    """
+    Без ентропії:
+    - variance: для вибору більш "однорідного" сегмента
+    - gradient: для вибору більш "деталізованого" сегмента
+    """
+    bh, bw, bs, _ = blocks.shape
+    variance = np.zeros((bh, bw))
+    gradient = np.zeros((bh, bw))
 
-labels = labels.reshape(gray.shape)
+    for i in range(bh):
+        for j in range(bw):
+            blk = blocks[i, j]
+            variance[i, j] = np.var(blk)
 
-# Візуалізація сегментації
-segmented = (labels * (255 // (k - 1))).astype(np.uint8)
+            gx = np.abs(np.diff(blk.astype(np.int16), axis=1)).mean()
+            gy = np.abs(np.diff(blk.astype(np.int16), axis=0)).mean()
+            gradient[i, j] = gx + gy
 
-# Відображення
-plt.figure(figsize=(12, 4))
+    return variance, gradient
 
-plt.subplot(1, 3, 1)
-plt.title("RGB")
-plt.imshow(rgb)
+def plot_histograms(pixels, title):
+    vals = pixels.flatten()
+
+    plt.figure(figsize=(12, 4))
+
+    # Frequency
+    plt.subplot(1, 2, 1)
+    plt.hist(vals, bins=256, range=(0, 256))
+    plt.title("Pixel Intensity Frequencies")
+    plt.xlabel("Intensity (0-255)")
+    plt.ylabel("Frequency")
+    plt.xlim(0, 255)
+    plt.ylim(bottom=0)
+
+    # Density
+    plt.subplot(1, 2, 2)
+    plt.hist(vals, bins=256, range=(0, 256), density=True)
+    plt.title("Pixel Intensity Distribution (Density)")
+    plt.xlabel("Intensity (0-255)")
+    plt.ylabel("Density")
+    plt.xlim(0, 255)
+    plt.ylim(bottom=0)
+
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+
+# =============================
+# Показ RGB і Grayscale
+# =============================
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.imshow(img_rgb)
+plt.title("RGB image")
 plt.axis("off")
 
-plt.subplot(1, 3, 2)
+plt.subplot(1, 2, 2)
+plt.imshow(img_gray, cmap="gray")
 plt.title("Grayscale")
-plt.imshow(gray, cmap="gray")
 plt.axis("off")
 
-plt.subplot(1, 3, 3)
-plt.title("Segmentation")
-plt.imshow(segmented, cmap="gray")
-plt.axis("off")
-
+plt.tight_layout()
 plt.show()
 
-# Гістограми для кожного сегмента
-plt.figure(figsize=(8, 6))
+# Гістограми для whole image
+plot_histograms(img_gray, "Whole image histogram (fixed X: 0..255)")
 
-for i in range(k):
-    pixels = gray[labels == i]
-    plt.hist(pixels, bins=256, alpha=0.5, label=f"Segment {i}")
+# =============================
+# 3) SEGMENTATION (8 / 16 / 32)
+# =============================
+for BLOCK_SIZE in [8, 16, 32]:
+    blocks, cropped = segment_into_blocks(img_gray, BLOCK_SIZE)
+    variance, gradient = compute_features_no_entropy(blocks)
 
-plt.title("Histograms of Segments")
-plt.legend()
-plt.show()
+    # 1) First segment = мін variance (найбільш однорідний)
+    first_idx = np.unravel_index(np.argmin(variance), variance.shape)
 
+    # 2) Third segment = макс gradient (найбільш деталізований)
+    third_idx = np.unravel_index(np.argmax(gradient), gradient.shape)
+
+    # 3) Second segment = "середній" (візьмемо блок з variance ближче до медіани)
+    var_flat = variance.flatten()
+    median_var = np.median(var_flat)
+    second_flat_idx = np.argmin(np.abs(var_flat - median_var))
+    second_idx = np.unravel_index(second_flat_idx, variance.shape)
+
+    segments = {
+        "First segment": blocks[first_idx],
+        "Second segment": blocks[second_idx],
+        "Third segment": blocks[third_idx]
+    }
+
+    # ---- Показ розбиття на блоки (рамки) ----
+    preview = cv2.cvtColor(cropped, cv2.COLOR_GRAY2BGR)
+
+    for name, (i, j) in zip(segments.keys(), [first_idx, second_idx, third_idx]):
+        y0 = i * BLOCK_SIZE
+        x0 = j * BLOCK_SIZE
+        cv2.rectangle(
+            preview,
+            (x0, y0),
+            (x0 + BLOCK_SIZE - 1, y0 + BLOCK_SIZE - 1),
+            (0, 0, 255),
+            2
+        )
+
+    plt.figure(figsize=(6, 6))
+    plt.imshow(cv2.cvtColor(preview, cv2.COLOR_BGR2RGB))
+    plt.title(f"Segmentation {BLOCK_SIZE}x{BLOCK_SIZE} (3 selected blocks)")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    # ---- Показ кожного сегмента + гістограм ----
+    for name, block in segments.items():
+        plt.figure(figsize=(4, 4))
+        plt.imshow(block, cmap="gray")
+        plt.title(f"{name} ({BLOCK_SIZE}x{BLOCK_SIZE})")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
+
+        plot_histograms(block, f"{name} - Histogram ({BLOCK_SIZE}x{BLOCK_SIZE})")
 
 # 4. Функція розрахування ентропії Шенона
 def calculate_shannon_entropy(image):
@@ -107,121 +204,91 @@ def calculate_markov_entropy(image):
     conditional_entropy = joint_entropy - marginal_entropy
     return conditional_entropy
 
+# =============================
+# 7) Застосувати функції 4–6 до grayscale (img_gray)
+# =============================
 
-# Застосування до вашого зображення
-img = cv2.imread('edited-image.jpg')
+# 7.1 Розрахунок для grayscale
+sh_gray = calculate_shannon_entropy(img_gray)
+ha_gray = calculate_hartley_measure(img_gray)
+mk_gray = calculate_markov_entropy(img_gray)
 
-entropy_s = calculate_shannon_entropy(img)
-measure_h = calculate_hartley_measure(img)
-entropy_m = calculate_markov_entropy(img)
+print("\n=== Пункт 7: Метрики для grayscale (img_gray) ===")
+print(f"Shannon (gray): {sh_gray:.4f} bits")
+print(f"Hartley (gray): {ha_gray:.4f} bits")
+print(f"Markov  (gray): {mk_gray:.4f} bits")
 
-print(f"Ентропія Шенона: {entropy_s:.4f} біт")
-print(f"Міра Хартлі: {measure_h:.4f} біт")
-print(f"Марковська ентропія (1-го порядку): {entropy_m:.4f} біт")
+# 7.2 Візуалізація: зліва зображення, справа стовпчики
+plt.figure(figsize=(12, 5))
 
-# 7. Застосувати функції 4–6 до зображення в градаціях сірого (gray)
-entropy_s_gray = calculate_shannon_entropy(gray)
-measure_h_gray = calculate_hartley_measure(gray)
-entropy_m_gray = calculate_markov_entropy(gray)
+plt.subplot(1, 2, 1)
+plt.imshow(img_gray, cmap="gray")
+plt.title("Whole Image (grayscale)")
+plt.axis("off")
 
-print("\n=== Пункт 7: Результати для grayscale (gray) ===")
-print(f"Ентропія Шенона (gray): {entropy_s_gray:.4f} біт")
-print(f"Міра Хартлі (gray): {measure_h_gray:.4f} біт")
-print(f"Марковська ентропія 1-го порядку (gray): {entropy_m_gray:.4f} біт")
+plt.subplot(1, 2, 2)
+metrics_names = ["Shannon", "Hartley", "Markov"]
+metrics_vals = [sh_gray, ha_gray, mk_gray]
+plt.bar(metrics_names, metrics_vals)
+plt.title("The Values of Entropies (Whole Image)")
+plt.ylabel("Value (bits)")
+for i, v in enumerate(metrics_vals):
+    plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
+
+plt.tight_layout()
+plt.show()
 
 
-# 8. Застосувати функції 4–6 до сегментів
-print("\n=== Пункт 8: Результати для кожного сегмента ===")
+# =============================
+# 8) Застосувати функції 4–6 до сегментів
+# IMPORTANT:
+# - беремо сегменти, розміру 16 х 16
+# =============================
 
-segment_results = []  # (segment_id, n_pixels, shannon, hartley, markov)
+# 8.0 Спочатку ще раз отримаємо сегменти саме для BLOCK_SIZE=16
+BLOCK_SIZE_FOR_P8 = 16
+blocks16, cropped16 = segment_into_blocks(img_gray, BLOCK_SIZE_FOR_P8)
+variance16, gradient16 = compute_features_no_entropy(blocks16)
 
-for seg_id in range(k):
-    mask = (labels == seg_id)
+first_idx16 = np.unravel_index(np.argmin(variance16), variance16.shape)
+third_idx16 = np.unravel_index(np.argmax(gradient16), gradient16.shape)
 
-    # Робимо 2D-зображення сегмента: пікселі сегмента залишаємо, решту зануляємо
-    # (так markov_entropy працює коректно з 2D, бо в ньому використовуються сусідні пікселі)
-    seg_img = np.zeros_like(gray)
-    seg_img[mask] = gray[mask]
+var_flat16 = variance16.flatten()
+median_var16 = np.median(var_flat16)
+second_flat_idx16 = np.argmin(np.abs(var_flat16 - median_var16))
+second_idx16 = np.unravel_index(second_flat_idx16, variance16.shape)
 
-    n_pixels = int(mask.sum())
+segments16 = {
+    "First segment": blocks16[first_idx16],
+    "Second segment": blocks16[second_idx16],
+    "Third segment": blocks16[third_idx16]
+}
+
+print("\n=== Пункт 8: Метрики для сегментів (BLOCK_SIZE=16) ===")
+
+# 8.1 Для кожного сегмента: зліва сегмент, справа відображення 3 метрик
+for seg_name, seg_img in segments16.items():
 
     sh = calculate_shannon_entropy(seg_img)
     ha = calculate_hartley_measure(seg_img)
-    ma = calculate_markov_entropy(seg_img)
+    mk = calculate_markov_entropy(seg_img)
 
-    segment_results.append((seg_id, n_pixels, sh, ha, ma))
+    print(f"{seg_name}: Shannon={sh:.4f}, Hartley={ha:.4f}, Markov={mk:.4f}")
 
-    print(f"Сегмент {seg_id}: pixels={n_pixels}, "
-          f"Shannon={sh:.4f}, Hartley={ha:.4f}, Markov={ma:.4f}")
+    plt.figure(figsize=(12, 5))
 
-# Усереднення результатів по сегментах:
-#
-# 1) просте середнє (кожен сегмент має однакову вагу)
-avg_sh = np.mean([r[2] for r in segment_results])
-avg_ha = np.mean([r[3] for r in segment_results])
-avg_ma = np.mean([r[4] for r in segment_results])
+    plt.subplot(1, 2, 1)
+    plt.imshow(seg_img, cmap="gray")
+    plt.title(f"{seg_name} (16x16)")
+    plt.axis("off")
 
-# 2) зважене середнє (вага = кількість пікселів у сегменті)
-total_pixels = sum(r[1] for r in segment_results)
-wavg_sh = sum(r[2] * r[1] for r in segment_results) / total_pixels
-wavg_ha = sum(r[3] * r[1] for r in segment_results) / total_pixels
-wavg_ma = sum(r[4] * r[1] for r in segment_results) / total_pixels
+    plt.subplot(1, 2, 2)
+    vals = [sh, ha, mk]
+    plt.bar(metrics_names, vals)
+    plt.title(f"The Values of Entropies ({seg_name})")
+    plt.ylabel("Value (bits)")
+    for i, v in enumerate(vals):
+        plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
 
-print("\n--- Усереднені значення по сегментах ---")
-print(f"Середнє (просте): Shannon={avg_sh:.4f}, Hartley={avg_ha:.4f}, Markov={avg_ma:.4f}")
-print(f"Середнє (зважене): Shannon={wavg_sh:.4f}, Hartley={wavg_ha:.4f}, Markov={wavg_ma:.4f}")
-
-
-# Візуалізація результатів пунктів 7 і 8
-#
-# 1) Порівняння: grayscale vs average сегментів (просте і зважене)
-labels_x = ["Shannon", "Hartley", "Markov"]
-vals_gray = [entropy_s_gray, measure_h_gray, entropy_m_gray]
-vals_avg = [avg_sh, avg_ha, avg_ma]
-vals_wavg = [wavg_sh, wavg_ha, wavg_ma]
-
-x = np.arange(len(labels_x))
-width = 0.25
-
-plt.figure(figsize=(10, 5))
-plt.bar(x - width, vals_gray, width, label="Gray (п.7)")
-plt.bar(x, vals_avg, width, label="Avg сегментів (просте)")
-plt.bar(x + width, vals_wavg, width, label="Avg сегментів (зважене)")
-plt.xticks(x, labels_x)
-plt.title("Порівняння результатів: grayscale vs сегменти")
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-# 2) Окремо: значення по сегментах
-seg_ids = [r[0] for r in segment_results]
-sh_vals = [r[2] for r in segment_results]
-ha_vals = [r[3] for r in segment_results]
-ma_vals = [r[4] for r in segment_results]
-
-plt.figure(figsize=(10, 4))
-plt.bar(seg_ids, sh_vals)
-plt.title("Ентропія Шенона по сегментах")
-plt.xlabel("Segment id")
-plt.ylabel("bits")
-plt.xticks(seg_ids)
-plt.tight_layout()
-plt.show()
-
-plt.figure(figsize=(10, 4))
-plt.bar(seg_ids, ha_vals)
-plt.title("Міра Хартлі по сегментах")
-plt.xlabel("Segment id")
-plt.ylabel("bits")
-plt.xticks(seg_ids)
-plt.tight_layout()
-plt.show()
-
-plt.figure(figsize=(10, 4))
-plt.bar(seg_ids, ma_vals)
-plt.title("Марковська ентропія 1-го порядку по сегментах")
-plt.xlabel("Segment id")
-plt.ylabel("bits")
-plt.xticks(seg_ids)
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()
