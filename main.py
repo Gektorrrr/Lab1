@@ -63,18 +63,18 @@ def plot_histograms(pixels, title):
     # Frequency
     plt.subplot(1, 2, 1)
     plt.hist(vals, bins=256, range=(0, 256))
-    plt.title("Pixel Intensity Frequencies")
-    plt.xlabel("Intensity (0-255)")
-    plt.ylabel("Frequency")
+    plt.title("Частота інтенсивності пікселів")
+    plt.xlabel("Інтенсивність (0-255)")
+    plt.ylabel("Частота")
     plt.xlim(0, 255)
     plt.ylim(bottom=0)
 
     # Density
     plt.subplot(1, 2, 2)
     plt.hist(vals, bins=256, range=(0, 256), density=True)
-    plt.title("Pixel Intensity Distribution (Density)")
-    plt.xlabel("Intensity (0-255)")
-    plt.ylabel("Density")
+    plt.title("Розподіл інтенсивності пікселів (щільність)")
+    plt.xlabel("Інтенсивність (0-255)")
+    plt.ylabel("Щільність")
     plt.xlim(0, 255)
     plt.ylim(bottom=0)
 
@@ -89,19 +89,19 @@ plt.figure(figsize=(12, 5))
 
 plt.subplot(1, 2, 1)
 plt.imshow(img_rgb)
-plt.title("RGB image")
+plt.title("RGB зображення")
 plt.axis("off")
 
 plt.subplot(1, 2, 2)
 plt.imshow(img_gray, cmap="gray")
-plt.title("Grayscale")
+plt.title("Зображення у відтінках сірого")
 plt.axis("off")
 
 plt.tight_layout()
 plt.show()
 
 # Гістограми для whole image
-plot_histograms(img_gray, "Whole image histogram (fixed X: 0..255)")
+plot_histograms(img_gray, "Гістограма всього зображення (фіксована вісь X: 0..255)")
 
 # =============================
 # 3) SEGMENTATION (8 / 16 / 32)
@@ -123,9 +123,9 @@ for BLOCK_SIZE in [8, 16, 32]:
     second_idx = np.unravel_index(second_flat_idx, variance.shape)
 
     segments = {
-        "First segment": blocks[first_idx],
-        "Second segment": blocks[second_idx],
-        "Third segment": blocks[third_idx]
+        "Перший сегмент": blocks[first_idx],
+        "Другий сегмент": blocks[second_idx],
+        "Третій сегмент": blocks[third_idx]
     }
 
     # ---- Показ розбиття на блоки (рамки) ----
@@ -144,7 +144,7 @@ for BLOCK_SIZE in [8, 16, 32]:
 
     plt.figure(figsize=(6, 6))
     plt.imshow(cv2.cvtColor(preview, cv2.COLOR_BGR2RGB))
-    plt.title(f"Segmentation {BLOCK_SIZE}x{BLOCK_SIZE} (3 selected blocks)")
+    plt.title(f"Сегментація {BLOCK_SIZE}x{BLOCK_SIZE} (3 вибрані блоки)")
     plt.axis("off")
     plt.tight_layout()
     plt.show()
@@ -158,7 +158,7 @@ for BLOCK_SIZE in [8, 16, 32]:
         plt.tight_layout()
         plt.show()
 
-        plot_histograms(block, f"{name} - Histogram ({BLOCK_SIZE}x{BLOCK_SIZE})")
+        plot_histograms(block, f"{name} - Гістограма ({BLOCK_SIZE}x{BLOCK_SIZE})")
 
 # 4. Функція розрахування ентропії Шенона
 def calculate_shannon_entropy(image):
@@ -223,15 +223,15 @@ plt.figure(figsize=(12, 5))
 
 plt.subplot(1, 2, 1)
 plt.imshow(img_gray, cmap="gray")
-plt.title("Whole Image (grayscale)")
+plt.title("Усе зображення (відтінки сірого)")
 plt.axis("off")
 
 plt.subplot(1, 2, 2)
-metrics_names = ["Shannon", "Hartley", "Markov"]
+metrics_names = ["Шеннон", "Хартлі", "Марков"]
 metrics_vals = [sh_gray, ha_gray, mk_gray]
 plt.bar(metrics_names, metrics_vals)
-plt.title("The Values of Entropies (Whole Image)")
-plt.ylabel("Value (bits)")
+plt.title("Значення ентропій (усе зображення)")
+plt.ylabel("Значення (біти)")
 for i, v in enumerate(metrics_vals):
     plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
 
@@ -259,9 +259,9 @@ second_flat_idx16 = np.argmin(np.abs(var_flat16 - median_var16))
 second_idx16 = np.unravel_index(second_flat_idx16, variance16.shape)
 
 segments16 = {
-    "First segment": blocks16[first_idx16],
-    "Second segment": blocks16[second_idx16],
-    "Third segment": blocks16[third_idx16]
+    "Перший сегмент": blocks16[first_idx16],
+    "Другий сегмент": blocks16[second_idx16],
+    "Третій сегмент": blocks16[third_idx16]
 }
 
 print("\n=== Пункт 8: Метрики для сегментів (BLOCK_SIZE=16) ===")
@@ -285,8 +285,8 @@ for seg_name, seg_img in segments16.items():
     plt.subplot(1, 2, 2)
     vals = [sh, ha, mk]
     plt.bar(metrics_names, vals)
-    plt.title(f"The Values of Entropies ({seg_name})")
-    plt.ylabel("Value (bits)")
+    plt.title(f"Значення ентропій ({seg_name})")
+    plt.ylabel("Значення (біти)")
     for i, v in enumerate(vals):
         plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
 
