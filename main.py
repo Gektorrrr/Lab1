@@ -240,55 +240,110 @@ plt.show()
 
 
 # =============================
-# 8) Застосувати функції 4–6 до сегментів
-# IMPORTANT:
-# - беремо сегменти, розміру 16 х 16
+# 8) Застосувати функції 4–6 до сегментів (8x8, 16x16, 32x32)
 # =============================
+print("\n=== Пункт 8: Метрики для сегментів (8x8, 16x16, 32x32) ===")
 
-# 8.0 Спочатку ще раз отримаємо сегменти саме для BLOCK_SIZE=16
-BLOCK_SIZE_FOR_P8 = 16
-blocks16, cropped16 = segment_into_blocks(img_gray, BLOCK_SIZE_FOR_P8)
-variance16, gradient16 = compute_features_no_entropy(blocks16)
+block_sizes = [8, 16, 32]
+segment_names = ["Перший сегмент", "Другий сегмент", "Третій сегмент"]
+metrics_names = ["Шеннон", "Хартлі", "Марков"]
 
-first_idx16 = np.unravel_index(np.argmin(variance16), variance16.shape)
-third_idx16 = np.unravel_index(np.argmax(gradient16), gradient16.shape)
+# Словник для збереження результатів для фінальної гістограми
+# Структура: results[metric_name][block_size][segment_name] = value
+results = {m: {b: {} for b in block_sizes} for m in metrics_names}
 
-var_flat16 = variance16.flatten()
-median_var16 = np.median(var_flat16)
-second_flat_idx16 = np.argmin(np.abs(var_flat16 - median_var16))
-second_idx16 = np.unravel_index(second_flat_idx16, variance16.shape)
+for bs in block_sizes:
+    blocks, cropped = segment_into_blocks(img_gray, bs)
+    variance, gradient = compute_features_no_entropy(blocks)
 
-segments16 = {
-    "Перший сегмент": blocks16[first_idx16],
-    "Другий сегмент": blocks16[second_idx16],
-    "Третій сегмент": blocks16[third_idx16]
-}
+    first_idx = np.unravel_index(np.argmin(variance), variance.shape)
+    third_idx = np.unravel_index(np.argmax(gradient), gradient.shape)
 
-print("\n=== Пункт 8: Метрики для сегментів (BLOCK_SIZE=16) ===")
+    var_flat = variance.flatten()
+    median_var = np.median(var_flat)
+    second_flat_idx = np.argmin(np.abs(var_flat - median_var))
+    second_idx = np.unravel_index(second_flat_idx, variance.shape)
 
-# 8.1 Для кожного сегмента: зліва сегмент, справа відображення 3 метрик
-for seg_name, seg_img in segments16.items():
+    segments = {
+        "Перший сегмент": blocks[first_idx],
+        "Другий сегмент": blocks[second_idx],
+        "Третій сегмент": blocks[third_idx]
+    }
 
-    sh = calculate_shannon_entropy(seg_img)
-    ha = calculate_hartley_measure(seg_img)
-    mk = calculate_markov_entropy(seg_img)
+    print(f"\n--- Блоки {bs}x{bs} ---")
+    
+    for seg_name, seg_img in segments.items():
+        sh = calculate_shannon_entropy(seg_img)
+        ha = calculate_hartley_measure(seg_img)
+        mk = calculate_markov_entropy(seg_img)
 
-    print(f"{seg_name}: Shannon={sh:.4f}, Hartley={ha:.4f}, Markov={mk:.4f}")
+        # Зберігаємо результати для загальної гістограми
+        results["Шеннон"][bs][seg_name] = sh
+        results["Хартлі"][bs][seg_name] = ha
+        results["Марков"][bs][seg_name] = mk
 
-    plt.figure(figsize=(12, 5))
+        print(f"{seg_name}: Shannon={sh:.4f}, Hartley={ha:.4f}, Markov={mk:.4f}")
 
-    plt.subplot(1, 2, 1)
-    plt.imshow(seg_img, cmap="gray")
-    plt.title(f"{seg_name} (16x16)")
-    plt.axis("off")
+        # Візуалізація для кожного сегмента 
+        plt.figure(figsize=(10, 4))
 
-    plt.subplot(1, 2, 2)
-    vals = [sh, ha, mk]
-    plt.bar(metrics_names, vals)
-    plt.title(f"Значення ентропій ({seg_name})")
-    plt.ylabel("Значення (біти)")
-    for i, v in enumerate(vals):
-        plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
+        plt.subplot(1, 2, 1)
+        plt.imshow(seg_img, cmap="gray")
+        plt.title(f"{seg_name} ({bs}x{bs})")
+        plt.axis("off")
 
-    plt.tight_layout()
-    plt.show()
+        plt.subplot(1, 2, 2)
+        vals = [sh, ha, mk]
+        plt.bar(metrics_names, vals, color=['#1f77b4', '#ff7f0e', '#2ca02c'])
+        plt.title(f"Ентропії ({seg_name} {bs}x{bs})")
+        plt.ylabel("Значення (біти)")
+        for i, v in enumerate(vals):
+            plt.text(i, v, f"{v:.4f}", ha="center", va="bottom")
+
+        plt.tight_layout()
+        plt.show()
+
+# =============================
+# 9) Загальна гістограма порівняння всіх значень
+# =============================
+print("\n=== Пункт 9: Загальна гістограма порівняння ===")
+
+# Створюємо 3 графіки (по одному на кожну метрику: Шеннон, Хартлі, Марков)
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig.suptitle("Порівняння метрик для різних розмірів блоків та сегментів", fontsize=16)
+
+x = np.arange(len(block_sizes))  # Координати по X для розмірів блоків [0, 1, 2]
+width = 0.25  # Ширина стовпця
+
+for idx, metric in enumerate(metrics_names):
+    ax = axes[idx]
+    
+    # Витягуємо значення для всіх розмірів блоків для кожного сегмента
+    vals_seg1 = [results[metric][bs]["Перший сегмент"] for bs in block_sizes]
+    vals_seg2 = [results[metric][bs]["Другий сегмент"] for bs in block_sizes]
+    vals_seg3 = [results[metric][bs]["Третій сегмент"] for bs in block_sizes]
+    
+    # Будуємо згруповані стовпці
+    rects1 = ax.bar(x - width, vals_seg1, width, label="Перший (мін. дисп.)", color='#1f77b4')
+    rects2 = ax.bar(x, vals_seg2, width, label="Другий (мед. дисп.)", color='#ff7f0e')
+    rects3 = ax.bar(x + width, vals_seg3, width, label="Третій (макс. град.)", color='#2ca02c')
+    
+    ax.set_title(f"Метрика: {metric}")
+    ax.set_xlabel("Розмір блоку")
+    ax.set_ylabel("Значення (біти)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{bs}x{bs}" for bs in block_sizes])
+    ax.legend()
+    
+    # Додаємо числові значення над стовпцями
+    for rects in [rects1, rects2, rects3]:
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(f'{height:.2f}',
+                        xy=(rect.get_x() + rect.get_width() / 2, height),
+                        xytext=(0, 3),  # зсув на 3 пікселі вгору
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=9)
+
+plt.tight_layout()
+plt.show()
